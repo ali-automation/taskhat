@@ -1,0 +1,7 @@
+# Example SOPS config for encrypting per-cluster secret values.
+# Replace the KMS key (or use age/pgp) with your own before use.
+creation_rules:
+  - path_regex: \.enc\.yaml$
+    encrypted_regex: ^(.+)$
+    kms: arn:aws:kms:REGION:ACCOUNT_ID:key/YOUR-KMS-KEY-ID
+    aws_profile: your-kms-profile

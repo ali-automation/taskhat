@@ -1,0 +1,92 @@
+{{- if .Values.rabbitmq.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "taskhat.fullname" . }}-rabbitmq
+  labels:
+    {{- include "taskhat.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rabbitmq
+spec:
+  clusterIP: None
+  selector:
+    {{- include "taskhat.selectorLabels" (dict "root" . "component" "rabbitmq") | nindent 4 }}
+  ports:
+    - name: amqp
+      port: 5672
+      targetPort: amqp
+    - name: management
+      port: 15672
+      targetPort: management
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "taskhat.fullname" . }}-rabbitmq
+  labels:
+    {{- include "taskhat.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rabbitmq
+spec:
+  serviceName: {{ include "taskhat.fullname" . }}-rabbitmq
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "taskhat.selectorLabels" (dict "root" . "component" "rabbitmq") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "taskhat.selectorLabels" (dict "root" . "component" "rabbitmq") | nindent 8 }}
+    spec:
+      containers:
+        - name: rabbitmq
+          image: {{ .Values.rabbitmq.image }}
+          ports:
+            - name: amqp
+              containerPort: 5672
+            - name: management
+              containerPort: 15672
+          env:
+            - name: RABBITMQ_DEFAULT_USER
+              value: {{ .Values.rabbitmq.auth.username | quote }}
+            - name: RABBITMQ_DEFAULT_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "taskhat.secretName" . }}
+                  key: rabbitmq-password
+          # Generous timings: RabbitMQ can take a minute after a node restart,
+          # and pings lag under memory pressure without the broker being down
+          # (same tuning the compose healthcheck needed).
+          readinessProbe:
+            exec:
+              command: ["rabbitmq-diagnostics", "-q", "ping"]
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            exec:
+              command: ["rabbitmq-diagnostics", "-q", "ping"]
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 10
+            failureThreshold: 6
+          {{- if .Values.rabbitmq.persistence.enabled }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/rabbitmq
+          {{- end }}
+          resources:
+            {{- toYaml .Values.rabbitmq.resources | nindent 12 }}
+  {{- if .Values.rabbitmq.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.rabbitmq.persistence.size }}
+        {{- with .Values.rabbitmq.persistence.storageClass }}
+        storageClassName: {{ . }}
+        {{- end }}
+  {{- end }}
+{{- end }}

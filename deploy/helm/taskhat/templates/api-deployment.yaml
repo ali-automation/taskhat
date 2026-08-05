@@ -1,0 +1,112 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "taskhat.fullname" . }}-api
+  labels:
+    {{- include "taskhat.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  replicas: {{ .Values.api.replicas }}
+  selector:
+    matchLabels:
+      {{- include "taskhat.selectorLabels" (dict "root" . "component" "api") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "taskhat.selectorLabels" (dict "root" . "component" "api") | nindent 8 }}
+      annotations:
+        checksum/secret: {{ print (include (print $.Template.BasePath "/secret.yaml") .) (include (print $.Template.BasePath "/secret-env.yaml") .) | sha256sum }}
+        {{- with .Values.api.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "taskhat.serviceAccountName" . }}
+      {{- include "taskhat.imagePullSecrets" . | nindent 6 }}
+      {{- if .Values.migrations.enabled }}
+      initContainers:
+        # Compose-style ordering: apply pending migrations before the new api
+        # starts. golang-migrate takes a Postgres advisory lock, so concurrent
+        # rollouts are safe; failures back off and retry with the pod.
+        - name: migrate
+          image: {{ include "taskhat.image" (dict "root" . "img" .Values.image.migrate) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- if or .Values.secrets .Values.envFrom }}
+          envFrom:
+            {{- if .Values.secrets }}
+            - secretRef:
+                name: {{ include "taskhat.fullname" . }}-env
+            {{- end }}
+            {{- with .Values.envFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
+          env:
+            {{- include "taskhat.backendEnv" . | nindent 12 }}
+          securityContext:
+            {{- include "taskhat.backendSecurityContext" . | nindent 12 }}
+      {{- end }}
+      containers:
+        - name: api
+          image: {{ include "taskhat.image" (dict "root" . "img" .Values.image.api) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8081
+          {{- if or .Values.secrets .Values.envFrom }}
+          envFrom:
+            {{- if .Values.secrets }}
+            - secretRef:
+                name: {{ include "taskhat.fullname" . }}-env
+            {{- end }}
+            {{- with .Values.envFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
+          env:
+            {{- if not (hasKey (.Values.env | default dict) "TASKHAT_LISTEN_ADDR") }}
+            - name: TASKHAT_LISTEN_ADDR
+              value: ":8081"
+            {{- end }}
+            {{- include "taskhat.backendEnv" . | nindent 12 }}
+            {{- with .Values.api.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 4
+          securityContext:
+            {{- include "taskhat.backendSecurityContext" . | nindent 12 }}
+          {{- if not .Values.s3.enabled }}
+          volumeMounts:
+            {{- include "taskhat.attachmentsMount" . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+      {{- if not .Values.s3.enabled }}
+      volumes:
+        {{- include "taskhat.attachmentsVolume" . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.api.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.api.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.api.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -1,0 +1,11 @@
+DROP TABLE issue_events;
+DROP TABLE issue_components;
+DROP TABLE components;
+DROP TABLE issue_labels;
+DROP TABLE labels;
+DROP TABLE issues;
+DROP TABLE project_members;
+DROP TABLE projects;
+DROP TABLE transitions;
+DROP TABLE statuses;
+DROP TABLE workflows;

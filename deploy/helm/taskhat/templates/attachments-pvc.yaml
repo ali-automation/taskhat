@@ -1,0 +1,17 @@
+{{- if and (not .Values.s3.enabled) .Values.attachments.persistence.enabled (not .Values.attachments.persistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "taskhat.fullname" . }}-attachments
+  labels:
+    {{- include "taskhat.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    {{- toYaml .Values.attachments.persistence.accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ .Values.attachments.persistence.size }}
+  {{- with .Values.attachments.persistence.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+{{- end }}

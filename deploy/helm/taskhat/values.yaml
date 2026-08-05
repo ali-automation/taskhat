@@ -1,0 +1,230 @@
+# Default values for the TaskHat chart.
+#
+# The backend Dockerfile is multi-target; build and push four images:
+#   docker build -t <registry>/taskhat-api:<tag>     --target api     backend/
+#   docker build -t <registry>/taskhat-worker:<tag>  --target worker  backend/
+#   docker build -t <registry>/taskhat-migrate:<tag> --target migrate backend/
+#   docker build -t <registry>/taskhat-web:<tag>                      frontend/
+
+nameOverride: ""
+fullnameOverride: ""
+
+# Free-form environment for api, worker and the migrate initContainer.
+# A plain NAME: value map — any backend variable can be set (or overridden)
+# here directly; entries win over everything the chart derives from config.*,
+# s3.* and the Secret. See backend/internal/config/config.go for the names.
+#   env:
+#     TASKHAT_BASE_URL: https://taskhat.example.com
+#     MY_EXTRA_FLAG: "on"
+env: {}
+
+# Secret environment for the backend containers — same NAME: value shape as
+# env:, but stored in a Kubernetes Secret (<release>-env) and loaded via
+# envFrom. Put credentials here (typically from a SOPS-encrypted values
+# file). Precedence: env: > secrets: > chart-derived values.
+#   secrets:
+#     TASKHAT_DB_URL: postgres://user:pass@host:5432/taskhat
+secrets: {}
+
+# envFrom passthrough for pulling whole ConfigMaps/Secrets into the backend
+# containers, e.g. [{secretRef: {name: my-secret}}].
+envFrom: []
+
+image:
+  # Prepended to every repository below, e.g. "registry.example.com/syshat".
+  registry: ""
+  # Tag defaults to the chart's appVersion when empty.
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+  api:
+    repository: taskhat-api
+    tag: ""
+  worker:
+    repository: taskhat-worker
+    tag: ""
+  migrate:
+    repository: taskhat-migrate
+    tag: ""
+  web:
+    repository: taskhat-web
+    tag: ""
+
+config:
+  # Public URL of the site — used in emails and invite links.
+  baseUrl: "http://taskhat.local"
+  env: "prod"
+  # Outgoing SMTP; can also be set later in Admin → System → Outgoing mail
+  # (database settings override these). host:587 = STARTTLS, host:465 =
+  # implicit TLS. Empty username = unauthenticated relay.
+  smtpAddr: ""
+  smtpFrom: "taskhat@localhost"
+  smtpUsername: ""
+  # Stored in the chart Secret (key smtp-password). With auth.existingSecret,
+  # supply TASKHAT_SMTP_PASSWORD via api/worker extraEnv instead.
+  smtpPassword: ""
+
+auth:
+  # REQUIRED (32+ characters) unless auth.existingSecret is set.
+  jwtSecret: ""
+  # Name of a pre-created Secret carrying ALL of the keys the chart otherwise
+  # renders itself: jwt-secret, db-url, redis-url, amqp-url,
+  # s3-access-key-id, s3-secret-access-key, postgres-password,
+  # rabbitmq-password. When set, the chart's own Secret is not created.
+  existingSecret: ""
+
+# S3-compatible object storage for attachments/avatars/wiki images
+# (recommended for production — lets api/worker scale freely).
+s3:
+  enabled: false
+  endpointUrl: ""
+  region: ""
+  bucket: ""
+  prefix: ""
+  accessKeyId: ""
+  secretAccessKey: ""
+
+# Filesystem fallback for attachments, used only when s3.enabled=false.
+# The volume is shared by api and worker, so with more than one replica it
+# must be ReadWriteMany (or use S3 instead).
+attachments:
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+    existingClaim: ""
+
+api:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  extraEnv: []
+
+worker:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  extraEnv: []
+
+web:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# Migrations run as an api initContainer (compose-style ordering): every
+# rollout applies pending migrations before the new api starts.
+migrations:
+  enabled: true
+
+service:
+  type: ClusterIP
+
+ingress:
+  enabled: true
+  className: ""
+  host: taskhat.local
+  annotations: {}
+  # Websockets: /ws must reach the api with upgrade support. The standard
+  # ingress-nginx controller handles this out of the box; some controllers
+  # need annotations (see the chart README).
+  tls: []
+  #  - secretName: taskhat-tls
+  #    hosts: [taskhat.example.com]
+
+postgresql:
+  enabled: true
+  image: postgres:16-alpine
+  auth:
+    username: taskhat
+    # REQUIRED when postgresql.enabled (unless auth.existingSecret is set).
+    password: ""
+    database: taskhat
+  persistence:
+    size: 10Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+
+# Used when postgresql.enabled=false. Full connection URL, e.g.
+# postgres://user:pass@db.example.com:5432/taskhat?sslmode=require
+externalDatabase:
+  url: ""
+
+redis:
+  enabled: true
+  image: redis:7-alpine
+  persistence:
+    enabled: true
+    size: 2Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+
+# Used when redis.enabled=false, e.g. redis://redis.example.com:6379/0
+externalRedis:
+  url: ""
+
+rabbitmq:
+  enabled: true
+  image: rabbitmq:3.13-management-alpine
+  auth:
+    username: taskhat
+    # REQUIRED when rabbitmq.enabled (unless auth.existingSecret is set).
+    password: ""
+  persistence:
+    enabled: true
+    size: 2Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 768Mi
+
+# Used when rabbitmq.enabled=false, e.g. amqp://user:pass@mq.example.com:5672/
+externalAmqp:
+  url: ""
+
+# Dev-only SMTP catcher; pair with config.smtpAddr pointing at it.
+mailhog:
+  enabled: false
+  image: mailhog/mailhog:v1.0.1
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}

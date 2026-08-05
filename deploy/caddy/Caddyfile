@@ -1,0 +1,13 @@
+:80 {
+	handle /api/* {
+		reverse_proxy api:8081
+	}
+
+	handle /ws {
+		reverse_proxy api:8081
+	}
+
+	handle {
+		reverse_proxy web:80
+	}
+}

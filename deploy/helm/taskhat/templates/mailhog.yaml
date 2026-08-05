@@ -1,0 +1,45 @@
+{{- if .Values.mailhog.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "taskhat.fullname" . }}-mailhog
+  labels:
+    {{- include "taskhat.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mailhog
+spec:
+  selector:
+    {{- include "taskhat.selectorLabels" (dict "root" . "component" "mailhog") | nindent 4 }}
+  ports:
+    - name: smtp
+      port: 1025
+      targetPort: smtp
+    - name: http
+      port: 8025
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "taskhat.fullname" . }}-mailhog
+  labels:
+    {{- include "taskhat.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mailhog
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "taskhat.selectorLabels" (dict "root" . "component" "mailhog") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "taskhat.selectorLabels" (dict "root" . "component" "mailhog") | nindent 8 }}
+    spec:
+      containers:
+        - name: mailhog
+          image: {{ .Values.mailhog.image }}
+          ports:
+            - name: smtp
+              containerPort: 1025
+            - name: http
+              containerPort: 8025
+{{- end }}

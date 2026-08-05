@@ -1,0 +1,75 @@
+# Example production values for the TaskHat Helm chart.
+# Everything here is DUMMY data — replace with your own before deploying.
+
+config:
+  baseUrl: https://taskhat.example.com
+
+env:
+  TASKHAT_ENV: prod
+  # External Redis / S3 examples (enable the bundled ones below instead if
+  # you prefer in-cluster dependencies).
+  TASKHAT_REDIS_URL: redis://redis.example.svc:6379/0
+  S3_ENDPOINT_URL: https://s3.example.com
+  S3_REGION: main
+  S3_BUCKET: taskhat
+  # SMTP (optional): authenticated submission, e.g. any relay on :587.
+  TASKHAT_SMTP_ADDR: smtp.example.com:587
+  TASKHAT_SMTP_FROM: taskhat@example.com
+  TASKHAT_SMTP_USERNAME: taskhat
+  # Public read-only demo mode (optional).
+  # TASKHAT_DEMO_MODE: "true"
+  # TASKHAT_DEMO_CONTACT_URL: "https://www.linkedin.com/in/your-profile/"
+  # TASKHAT_DEMO_INSTAGRAM_URL: "https://www.instagram.com/your-profile/"
+
+# Secret values belong in a separate file loaded with -f (keep it out of
+# git, or commit it encrypted with SOPS — see ../.sops.yaml):
+#
+# secrets:
+#   TASKHAT_JWT_SECRET: "generate-a-long-random-string"
+#   TASKHAT_DB_URL: "postgres://taskhat:CHANGE_ME@db.example.svc:5432/taskhat?sslmode=disable"
+#   TASKHAT_AMQP_URL: "amqp://taskhat:CHANGE_ME@rabbitmq.example.svc:5672/"
+#   TASKHAT_SMTP_PASSWORD: "CHANGE_ME"
+#   S3_ACCESS_KEY_ID: "CHANGE_ME"
+#   S3_SECRET_ACCESS_KEY: "CHANGE_ME"
+
+image:
+  # Prepended to every repository below.
+  registry: registry.example.com/your-org
+  pullPolicy: Always
+  pullSecrets:
+    - your-registry-pull-secret
+  api:
+    repository: taskhat-api
+    tag: latest
+  worker:
+    repository: taskhat-worker
+    tag: latest
+  migrate:
+    repository: taskhat-migrate
+    tag: latest
+  web:
+    repository: taskhat-web
+    tag: latest
+
+ingress:
+  enabled: true
+  className: nginx
+  host: taskhat.example.com
+  annotations:
+    kubernetes.io/tls-acme: "true"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+  tls:
+    - secretName: taskhat-tls
+      hosts:
+        - taskhat.example.com
+
+# Bundled dependencies — disable when using external services above.
+postgresql:
+  enabled: false
+redis:
+  enabled: false
+rabbitmq:
+  enabled: false
+s3:
+  enabled: true

@@ -1,0 +1,28 @@
+# Dev overrides: exposed ports for direct access + rabbitmq management UI + MailHog.
+# Compose loads this file AUTOMATICALLY (docker-compose.override.yml), so a plain
+# `docker compose up -d` includes it — no -f flags needed. For a production
+# deploy that must EXCLUDE these ports, run: docker compose -f docker-compose.yml up -d
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+  redis:
+    ports:
+      - "6379:6379"
+  rabbitmq:
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+  api:
+    ports:
+      - "8081:8081"
+
+  worker:
+    environment:
+      TASKHAT_SMTP_ADDR: mailhog:1025
+
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    restart: unless-stopped
+    ports:
+      - "8025:8025"

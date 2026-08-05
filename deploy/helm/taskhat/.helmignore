@@ -1,0 +1,10 @@
+# Patterns to ignore when packaging the chart.
+.DS_Store
+.git/
+.gitignore
+*.swp
+*.tmp
+*~
+# Not part of the packaged chart: per-cluster values + sops config.
+clusters/
+.sops.yaml

@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+*.log
+frontend/dbg*.mjs
+frontend/*shot*.mjs
+*.png
+!docs/screenshots/*.png
+deploy/helm/dist/

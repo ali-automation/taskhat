@@ -1,0 +1,144 @@
+name: taskhat
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-taskhat}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-taskhat_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-taskhat}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-taskhat} -d ${POSTGRES_DB:-taskhat}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-taskhat}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-taskhat_dev_password}
+    volumes:
+      - rabbitmqdata:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      # Generous timeout + retries: host memory-pressure spikes (e.g. during
+      # image builds) can slow the ping without the broker being down.
+      timeout: 10s
+      retries: 12
+      # RabbitMQ needs up to a minute after a host reboot; don't flag it
+      # unhealthy (and block dependent deploys) while it boots.
+      start_period: 60s
+      start_interval: 3s
+
+  migrate:
+    build:
+      context: ./backend
+      target: migrate
+    environment:
+      TASKHAT_DB_URL: ${TASKHAT_DB_URL:-postgres://taskhat:taskhat_dev_password@postgres:5432/taskhat?sslmode=disable}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: ./backend
+      target: api
+    restart: unless-stopped
+    environment: &backend_env
+      TASKHAT_DB_URL: ${TASKHAT_DB_URL:-postgres://taskhat:taskhat_dev_password@postgres:5432/taskhat?sslmode=disable}
+      TASKHAT_REDIS_URL: ${TASKHAT_REDIS_URL:-redis://redis:6379/0}
+      TASKHAT_AMQP_URL: ${TASKHAT_AMQP_URL:-amqp://taskhat:taskhat_dev_password@rabbitmq:5672/}
+      TASKHAT_JWT_SECRET: ${TASKHAT_JWT_SECRET:-change_me_in_prod_32_bytes_minimum!!}
+      TASKHAT_BASE_URL: ${TASKHAT_BASE_URL:-http://localhost:8080}
+      TASKHAT_LISTEN_ADDR: ${TASKHAT_LISTEN_ADDR:-:8081}
+      TASKHAT_ENV: ${TASKHAT_ENV:-dev}
+      TASKHAT_STORAGE_DIR: /data/attachments
+      TASKHAT_SMTP_ADDR: ${TASKHAT_SMTP_ADDR:-}
+      TASKHAT_SMTP_FROM: ${TASKHAT_SMTP_FROM:-taskhat@localhost}
+      TASKHAT_DEMO_MODE: ${TASKHAT_DEMO_MODE:-}
+      TASKHAT_DEMO_CONTACT_URL: ${TASKHAT_DEMO_CONTACT_URL:-}
+      TASKHAT_DEMO_INSTAGRAM_URL: ${TASKHAT_DEMO_INSTAGRAM_URL:-}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
+      S3_REGION: ${S3_REGION:-}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      # The api retries RabbitMQ itself at startup; gating on service_healthy
+      # here aborted recreates whenever RabbitMQ was momentarily unhealthy and
+      # left the new containers stuck in "Created".
+      rabbitmq:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - attachments:/data/attachments
+    healthcheck:
+      test: ["CMD", "/taskhat-api", "-healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      # Probe quickly right after start so `up --wait` returns in seconds.
+      start_period: 30s
+      start_interval: 2s
+
+  worker:
+    build:
+      context: ./backend
+      target: worker
+    restart: unless-stopped
+    environment: *backend_env
+    volumes:
+      - attachments:/data/attachments
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_started # worker retries AMQP itself
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - api
+      - web
+
+volumes:
+  pgdata:
+  redisdata:
+  rabbitmqdata:
+  attachments:

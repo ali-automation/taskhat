@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "taskhat.fullname" . }}-worker
+  labels:
+    {{- include "taskhat.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  replicas: {{ .Values.worker.replicas }}
+  selector:
+    matchLabels:
+      {{- include "taskhat.selectorLabels" (dict "root" . "component" "worker") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "taskhat.selectorLabels" (dict "root" . "component" "worker") | nindent 8 }}
+      annotations:
+        checksum/secret: {{ print (include (print $.Template.BasePath "/secret.yaml") .) (include (print $.Template.BasePath "/secret-env.yaml") .) | sha256sum }}
+        {{- with .Values.worker.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "taskhat.serviceAccountName" . }}
+      {{- include "taskhat.imagePullSecrets" . | nindent 6 }}
+      containers:
+        - name: worker
+          image: {{ include "taskhat.image" (dict "root" . "img" .Values.image.worker) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- if or .Values.secrets .Values.envFrom }}
+          envFrom:
+            {{- if .Values.secrets }}
+            - secretRef:
+                name: {{ include "taskhat.fullname" . }}-env
+            {{- end }}
+            {{- with .Values.envFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
+          env:
+            {{- include "taskhat.backendEnv" . | nindent 12 }}
+            {{- with .Values.worker.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          securityContext:
+            {{- include "taskhat.backendSecurityContext" . | nindent 12 }}
+          {{- if not .Values.s3.enabled }}
+          volumeMounts:
+            {{- include "taskhat.attachmentsMount" . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}
+      {{- if not .Values.s3.enabled }}
+      volumes:
+        {{- include "taskhat.attachmentsVolume" . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.worker.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.worker.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.worker.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

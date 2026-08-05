@@ -1,0 +1,35 @@
+TaskHat {{ .Chart.AppVersion }} deployed as release "{{ .Release.Name }}".
+
+{{- if .Values.ingress.enabled }}
+
+Open:  http{{ if .Values.ingress.tls }}s{{ end }}://{{ .Values.ingress.host }}/
+{{- else }}
+
+No Ingress was created (ingress.enabled=false). Reach the app through the
+services {{ include "taskhat.fullname" . }}-web (port 80) and
+{{ include "taskhat.fullname" . }}-api (port 8081, paths /api and /ws), e.g.:
+
+  kubectl port-forward svc/{{ include "taskhat.fullname" . }}-web 8080:80
+{{- end }}
+
+First run: registration starts open and THE FIRST ACCOUNT REGISTERED
+BECOMES THE SITE ADMIN — register yours immediately, then switch the site
+to invite-only in Admin settings. Outgoing mail, incoming mail, SSO and
+the rest live under the gear menu.
+
+{{- if not .Values.s3.enabled }}
+
+Attachments are stored on a volume ({{ ternary "PVC" "emptyDir — NOT persistent, enable attachments.persistence or S3!" .Values.attachments.persistence.enabled }}).
+With api.replicas or worker.replicas > 1 the volume must be ReadWriteMany;
+for anything serious, point s3.* at an S3-compatible bucket instead.
+{{- end }}
+
+{{- if .Values.config.smtpAddr | eq "" }}
+
+TASKHAT_SMTP_ADDR is empty — no email until you set config.smtpAddr or
+configure SMTP in Admin → System → Outgoing mail.
+{{- end }}
+
+Check rollout:
+
+  kubectl get pods -l app.kubernetes.io/instance={{ .Release.Name }}
