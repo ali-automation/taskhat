@@ -708,7 +708,12 @@ export function useAdminUpdateSettings() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (body: Record<string, string>) =>
-      api<Record<string, string>>('/admin/settings', { method: 'PUT', body: JSON.stringify(body) }),
+      // Underscore-prefixed keys are computed display values from the GET
+      // payload — never send them back (the API rejects unknown fields).
+      api<Record<string, string>>('/admin/settings', {
+        method: 'PUT',
+        body: JSON.stringify(Object.fromEntries(Object.entries(body).filter(([k]) => !k.startsWith('_')))),
+      }),
     onSuccess: (settings) => {
       qc.setQueryData(['admin-settings'], settings)
       qc.invalidateQueries({ queryKey: ['site'] })

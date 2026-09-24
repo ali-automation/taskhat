@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -367,8 +369,29 @@ type updateSettingsRequest struct {
 }
 
 func (s *Server) handleAdminUpdateSettings(w http.ResponseWriter, r *http.Request) {
+	// The GET payload carries computed, underscore-prefixed fields (the
+	// "_smtp_env_*" display values). Clients round-trip the whole object,
+	// so drop those before the strict decode — otherwise saving ANY
+	// setting fails with "invalid JSON body" (GitHub issue #1).
+	raw := map[string]json.RawMessage{}
+	if !decodeJSON(w, r, &raw) {
+		return
+	}
+	for k := range raw {
+		if strings.HasPrefix(k, "_") {
+			delete(raw, k)
+		}
+	}
+	cleaned, err := json.Marshal(raw)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
 	var req updateSettingsRequest
-	if !decodeJSON(w, r, &req) {
+	dec := json.NewDecoder(bytes.NewReader(cleaned))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
 	if req.RegistrationMode != "open" && req.RegistrationMode != "invite-only" {
