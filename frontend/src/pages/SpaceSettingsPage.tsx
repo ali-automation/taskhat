@@ -17,7 +17,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   useBoards, useCreateStatus, useDeleteLabel, useDeleteProject, useDeleteProjectAvatar, useDeleteStatus,
   useLabelInfo, useMembers, useProject, useRemoveMember, useRenameLabel, useRenameStatus, useReorderColumns,
-  useSetArchived, useStatuses, useUpdateColumns, useUpdateMemberRole, useUpdateNotifyPrefs,
+  useSetArchived, useStatuses, useUpdateColumns, useUpdateMemberRole, useUpdateNotifyPrefs, useUserSearch,
   useUpdateProjectDetails, useUploadProjectAvatar,
 } from '../api/hooks'
 import type { Member, Status } from '../api/types'
@@ -382,6 +382,39 @@ function AccessSection({ projectKey, members }: { projectKey: string; members: M
   const removeMember = useRemoveMember(projectKey)
   const [error, setError] = useState<string | null>(null)
 
+  // Add people: search-any-user picker + role, backed by POST /members.
+  const qc = useQueryClient()
+  const [userQuery, setUserQuery] = useState('')
+  const [pickedEmail, setPickedEmail] = useState<string | null>(null)
+  const [newRole, setNewRole] = useState('member')
+  const [adding, setAdding] = useState(false)
+  const { data: found } = useUserSearch(userQuery)
+  const memberIds = new Set(members.map((m) => m.user.id))
+  const candidateOptions = (found ?? [])
+    .filter((u) => !memberIds.has(u.id))
+    .map((u) => ({ label: `${u.displayName} (${u.email})`, value: u.email }))
+  const roleOptions = [
+    { label: t('Admin'), value: 'admin' },
+    { label: t('Member'), value: 'member' },
+    { label: t('Viewer'), value: 'viewer' },
+  ]
+  const addPerson = () => {
+    if (!pickedEmail) return
+    setError(null)
+    setAdding(true)
+    api(`/projects/${projectKey}/members`, {
+      method: 'POST',
+      body: JSON.stringify({ email: pickedEmail, role: newRole }),
+    })
+      .then(() => {
+        setPickedEmail(null)
+        setUserQuery('')
+        void qc.invalidateQueries({ queryKey: ['members', projectKey] })
+      })
+      .catch((e) => setError(e instanceof ApiError ? e.message : t('Something went wrong')))
+      .finally(() => setAdding(false))
+  }
+
   const act = (fn: () => Promise<unknown>) => {
     setError(null)
     fn().catch((e) => setError(e instanceof ApiError ? e.message : t('Something went wrong')))
@@ -391,7 +424,7 @@ function AccessSection({ projectKey, members }: { projectKey: string; members: M
     <div style={cardStyle}>
       <h3 style={h3Style}>{t('Access')}</h3>
       <p style={{ ...hintStyle, marginBottom: 4 }}>
-        {t('Who can see and edit work in this space. Add people from the People tab on any space page or via “Add member”.')}
+        {t('Who can see and edit work in this space.')}
       </p>
       <p style={{ ...hintStyle, marginBottom: 12 }}>
         {t('What each role can do is defined by the permission scheme: {name}', { name: myPerms?.scheme.name ?? '…' })}
@@ -404,6 +437,32 @@ function AccessSection({ projectKey, members }: { projectKey: string; members: M
           <SectionMessage appearance="error">{error}</SectionMessage>
         </div>
       )}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
+        <div style={{ minWidth: 280, flex: '0 1 340px' }}>
+          <Select
+            spacing="compact"
+            placeholder={t('Add people: search by name or email…')}
+            options={candidateOptions}
+            inputValue={userQuery}
+            onInputChange={(v) => setUserQuery(v)}
+            filterOption={() => true}
+            value={candidateOptions.find((o) => o.value === pickedEmail) ?? null}
+            onChange={(o) => setPickedEmail(o?.value ?? null)}
+            noOptionsMessage={() => (userQuery ? t('No matching users') : t('Type to search users'))}
+          />
+        </div>
+        <div style={{ width: 130 }}>
+          <Select
+            spacing="compact"
+            options={roleOptions}
+            value={roleOptions.find((o) => o.value === newRole)}
+            onChange={(o) => o && setNewRole(o.value)}
+          />
+        </div>
+        <Button appearance="primary" isDisabled={!pickedEmail} isLoading={adding} onClick={addPerson}>
+          {t('Add')}
+        </Button>
+      </div>
       {members.map((m) => {
         const isLead = project?.lead.id === m.user.id
         const isSelf = user?.id === m.user.id

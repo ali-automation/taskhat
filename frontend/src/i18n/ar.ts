@@ -1557,4 +1557,8 @@ export const ar: Record<string, string> = {
   'This is a read-only demo account.': 'هذا حساب تجريبي للقراءة فقط.',
   'Contact my creator for more details:': 'تواصل مع صانعي لمزيد من التفاصيل:',
   '⚡ Systems online. I\'m SysHat robot, your guide.': '⚡ الأنظمة تعمل. أنا روبوت SysHat، مرشدك.',
+  'Who can see and edit work in this space.': 'من يستطيع رؤية العمل وتحريره في هذه المساحة.',
+  'Add people: search by name or email…': 'إضافة أشخاص: ابحث بالاسم أو البريد…',
+  'No matching users': 'لا مستخدمين مطابقين',
+  'Type to search users': 'اكتب للبحث عن المستخدمين',
 }
